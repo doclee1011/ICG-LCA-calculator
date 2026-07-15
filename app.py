@@ -1,6 +1,10 @@
 import os
 import pandas as pd
 import numpy as np
+# 新增这两行，放在matplotlib前面
+import matplotlib
+matplotlib.use('Agg')
+
 import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
