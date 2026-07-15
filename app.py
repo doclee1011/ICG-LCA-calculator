@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_curve
 
 # ==============================================================================
-# 0. 网页页面高级排版与样式配置 (符合顶级期刊质感)
+# 0. Page layout & journal-standard style configuration
 # ==============================================================================
 st.set_page_config(
     page_title="ICG-LCA Perfusion Risk Calculator (Branch B Full Model)",
@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 注入符合高规格期刊配色的自定义 CSS
+# Custom CSS for academic journal style
 st.markdown("""
     <style>
     .main-title { font-size:26px; font-weight:bold; color:#1e3d59; text-align:center; margin-bottom:5px; }
@@ -35,7 +35,7 @@ st.markdown("""
 
 
 # ==============================================================================
-# 1. 后台核心智能：嵌入缩放流水线的全量模型实时训练与截点动态计算
+# 1. Core Model Engine: Train pipeline & calculate dynamic cutoff thresholds
 # ==============================================================================
 @st.cache_resource
 def load_and_train_full_model():
@@ -47,7 +47,7 @@ def load_and_train_full_model():
     elif os.path.exists(file_path_csv):
         target_path = file_path_csv
     else:
-        return None, None, 0.5, 0.5, "未找到底层数据文件，请确保数据文件 2026-2-27.xlsx 与 app.py 处于同一目录下。"
+        return None, None, 0.5, 0.5, "Data file missing: ensure 2026-2-27.xlsx is placed in the same directory as app.py."
 
     if target_path.endswith('.csv'):
         df_raw = pd.read_csv(target_path)
@@ -57,10 +57,10 @@ def load_and_train_full_model():
     df_clean = df_raw.dropna(subset=['slopDA']).copy()
     df_clean = df_clean[(df_clean['slop1'] > 0.01) & (df_clean['slopDA'] >= -0.5)].copy()
 
-    # 对齐 GMM 客观生理红线 0.2933 划分因变量
+    # Binary label based on GMM cutoff 0.2933
     df_clean['target'] = (df_clean['slopDA'] > 0.2933).astype(int)
 
-    # 15个全量自变量输入空间
+    # Full 15 preoperative predictors
     preop_vars = [
         'gender', 'age', 'BMI', 'Aeterial_cl', 'LCA_dis', 'tumor_dia',
         'Ctvalue', 'diameter', 'tumor_dis', 'CEA', 'CA199', 'protein_lev',
@@ -71,11 +71,12 @@ def load_and_train_full_model():
     X = df_clean[preop_vars].copy()
     y = df_clean['target'].copy()
 
+    # Recode binary categorical variables (1/2 → 0/1)
     for col in preop_vars:
         if X[col].isin([1, 2]).all() or (X[col].max() == 2 and X[col].min() == 1):
             X[col] = X[col].map({1: 0, 2: 1})
 
-    # 【核心修复】：构建包含 StandardScaler 的全面流水线，杜绝两套脚本的方法学偏倚
+    # Pipeline: StandardScaler + Balanced Random Forest
     pipeline = Pipeline([
         ('scaler', StandardScaler()),
         ('classifier', RandomForestClassifier(n_estimators=200, max_depth=5, min_samples_leaf=2, random_state=42,
@@ -83,18 +84,19 @@ def load_and_train_full_model():
     ])
     pipeline.fit(X, y)
 
-    # 【核心修复】：基于全量数据拟合结果实时提取无偏 ROC 双截点，废除写死数字的硬编码缺陷
+    # Dynamic ROC threshold calculation
     full_probs = pipeline.predict_proba(X)[:, 1]
     fpr, tpr, thresholds_roc = roc_curve(y, full_probs)
 
-    # 灵敏度达 90% 处的安全切点作为低/中风险界限
+    # Low/medium risk cutoff: TPR ≥ 0.90
     idx_low = np.where(tpr >= 0.90)[0][0]
     computed_t_low = float(thresholds_roc[idx_low])
 
-    # 特异度达 90% (即 FPR <= 10%) 处的高纯度切点作为中/高风险界限
+    # Medium/high risk cutoff: FPR ≤ 0.10
     idx_high = np.where(fpr <= 0.10)[0][-1]
     computed_t_high = float(thresholds_roc[idx_high])
 
+    # Feature display labels for plot
     medical_axis_labels = [
         'Sex (Male)', 'Age (>60y)', 'BMI (>24)', 'LCA Branching Type', 'LCA Distance', 'Tumor Diameter (>4cm)',
         'LCA/IMA CT Ratio', 'LCA/IMA Diameter Ratio', 'Tumor Distance to Anus', 'Preoperative CEA (>5)',
@@ -107,7 +109,7 @@ def load_and_train_full_model():
     return pipeline, importances, computed_t_low, computed_t_high, None
 
 
-# 全量提取后台联动引擎要素
+# Load trained model
 model_pipeline, feat_importances, t_low, t_high, error_msg = load_and_train_full_model()
 
 if error_msg:
@@ -115,7 +117,7 @@ if error_msg:
     st.stop()
 
 # ==============================================================================
-# 2. 交互式前端：左侧侧边栏 15 项患者多模态指标全面输入系统
+# 2. Frontend Sidebar: 15 Clinical Variable Input Panel
 # ==============================================================================
 st.markdown(
     "<div class='main-title'>Web-Based Calculator for Predicting Rectal Perfusion Loss via ICG Fluorescence</div>",
@@ -125,70 +127,70 @@ st.markdown(
     unsafe_allow_html=True)
 
 st.sidebar.markdown("### 🩺 Patient Characteristics Input")
-st.sidebar.markdown("请根据术前多模态影像与术中解剖真实探查进行选择：")
+st.sidebar.markdown("Fill in parameters based on preoperative imaging & intraoperative surgical findings:")
 
-st.sidebar.markdown("#### 🔹 血管解剖与影像动力学 (Vascular Morphology)")
-ct_val_map = st.sidebar.selectbox("1. LCA/IMA CT Value Ratio (Ctvalue) | CT值比值:", ["≤ 0.52", "> 0.52"])
+st.sidebar.markdown("#### 🔹 Vascular Morphology & CT Hemodynamics")
+ct_val_map = st.sidebar.selectbox("1. LCA/IMA CT Value Ratio (Ctvalue):", ["≤ 0.52", "> 0.52"])
 Ctvalue = 0 if ct_val_map == "≤ 0.52" else 1
 
-diam_map = st.sidebar.selectbox("2. LCA/IMA Short Diameter Ratio (diameter) | 短径比值:", ["≤ 0.63", "> 0.63"])
+diam_map = st.sidebar.selectbox("2. LCA/IMA Short Diameter Ratio (diameter):", ["≤ 0.63", "> 0.63"])
 diameter = 0 if diam_map == "≤ 0.63" else 1
 
-art_map = st.sidebar.selectbox("3. LCA Branching Type (Aeterial_cl) | 血管发出分型:",
-                               ["Rectosigmoid/Left-sigmoid trunk (直乙/左乙共干型)", "Three-branch type (三支型)"])
-Aeterial_cl = 0 if "共干型" in art_map else 1
+art_map = st.sidebar.selectbox("3. LCA Branching Type (Aeterial_cl):",
+                               ["Rectosigmoid common trunk type", "Three-branch independent type"])
+Aeterial_cl = 0 if "common trunk" in art_map else 1
 
-lca_dis_map = st.sidebar.selectbox("4. LCA Distance to IMA Origin (LCA_dis) | LCA发出距离:", ["≤ 3.5 cm", "> 3.5 cm"])
+lca_dis_map = st.sidebar.selectbox("4. LCA Distance to IMA Origin (LCA_dis):", ["≤ 3.5 cm", "> 3.5 cm"])
 LCA_dis = 0 if lca_dis_map == "≤ 3.5 cm" else 1
 
-st.sidebar.markdown("#### 🔹 肿瘤原发灶与病理分期 (Tumor Pathology)")
-t_map = st.sidebar.selectbox("5. Tumor T Stage (T_stage) | 肿瘤 T 分期:",
-                             ["Stage 1-2 (早期)", "Stage 3-4 (局部进展期)"])
-T_stage = 0 if "早期" in t_map else 1
+st.sidebar.markdown("#### 🔹 Tumor Morphology & Pathological Staging")
+t_map = st.sidebar.selectbox("5. Tumor T Stage (T_stage):",
+                             ["Stage 1-2 (Early stage)", "Stage 3-4 (Locally advanced)"])
+T_stage = 0 if "Early stage" in t_map else 1
 
-n_map = st.sidebar.selectbox("6. Lymph Node Metastasis (N_stage) | 淋巴结转移情况:",
-                             ["N0 (无淋巴结转移)", "N+ (有淋巴结转移)"])
-N_stage = 0 if "无" in n_map else 1
+n_map = st.sidebar.selectbox("6. Lymph Node Metastasis (N_stage):",
+                             ["N0 (No nodal metastasis)", "N+ (Positive nodal metastasis)"])
+N_stage = 0 if "No nodal" in n_map else 1
 
-m_map = st.sidebar.selectbox("7. Distant Metastasis (M_stage) | 远处转移情况:", ["M0 (无远处转移)", "M1 (有远处转移)"])
-M_stage = 0 if "无" in m_map else 1
+m_map = st.sidebar.selectbox("7. Distant Metastasis (M_stage):", ["M0 (No distant metastasis)", "M1 (Distant metastasis present)"])
+M_stage = 0 if "No distant" in m_map else 1
 
-tum_dia_map = st.sidebar.selectbox("8. Tumor Maximum Diameter (tumor_dia) | 肿瘤最大直径:", ["≤ 4 cm", "> 4 cm"])
+tum_dia_map = st.sidebar.selectbox("8. Tumor Maximum Diameter (tumor_dia):", ["≤ 4 cm", "> 4 cm"])
 tumor_dia = 0 if "≤" in tum_dia_map else 1
 
-tum_dis_map = st.sidebar.selectbox("9. Tumor Distance to Anus (tumor_dis) | 肿瘤距肛门距离:", ["< 10 cm", "≥ 10 cm"])
+tum_dis_map = st.sidebar.selectbox("9. Tumor Distance to Anus (tumor_dis):", ["< 10 cm", "≥ 10 cm"])
 tumor_dis = 0 if "< 10" in tum_dis_map else 1
 
-st.sidebar.markdown("#### 🔹 患者基础基本状态与化验 (Patient Baseline & Lab)")
-gender_map = st.sidebar.selectbox("10. Patient Sex (gender) | 性别:", ["Male (男)", "Female (女)"])
+st.sidebar.markdown("#### 🔹 Patient Baseline & Preoperative Laboratory Tests")
+gender_map = st.sidebar.selectbox("10. Patient Sex (gender):", ["Male", "Female"])
 gender = 0 if "Male" in gender_map else 1
 
-age_map = st.sidebar.selectbox("11. Patient Age (age) | 年龄分组:",
-                               ["≤ 60 years old (中青年)", "> 60 years old (老年)"])
+age_map = st.sidebar.selectbox("11. Patient Age Group (age):",
+                               ["≤ 60 years old (Middle-aged)", "> 60 years old (Elderly)"])
 age = 0 if "≤" in age_map else 1
 
-bmi_map = st.sidebar.selectbox("12. Patient BMI Level (BMI) | 体质指数:", ["≤ 24", "> 24"])
+bmi_map = st.sidebar.selectbox("12. Patient BMI Level (BMI):", ["≤ 24", "> 24"])
 BMI = 0 if bmi_map == "≤ 24" else 1
 
-cea_map = st.sidebar.selectbox("13. Preoperative CEA Level (CEA) | 术前 CEA 水平:", ["≤ 5 ng/mL", "> 5 ng/mL"])
+cea_map = st.sidebar.selectbox("13. Preoperative CEA Level (CEA):", ["≤ 5 ng/mL", "> 5 ng/mL"])
 CEA = 0 if cea_map == "≤ 5 ng/mL" else 1
 
-ca199_map = st.sidebar.selectbox("14. Preoperative CA199 Level (CA199) | 术前 CA199 水平:", ["≤ 34 U/mL", "> 34 U/mL"])
+ca199_map = st.sidebar.selectbox("14. Preoperative CA199 Level (CA199):", ["≤ 34 U/mL", "> 34 U/mL"])
 CA199 = 0 if ca199_map == "≤ 34 U/mL" else 1
 
-protein_map = st.sidebar.selectbox("15. Serum Albumin Level (protein_lev) | 白蛋白水平:",
-                                   ["< 40 g/L (低白蛋白营养不良)", "≥ 40 g/L (营养状态良好)"])
+protein_map = st.sidebar.selectbox("15. Serum Albumin Level (protein_lev):",
+                                   ["< 40 g/L (Hypoalbuminemia / Malnutrition)", "≥ 40 g/L (Normal nutritional status)"])
 protein_lev = 0 if "< 40" in protein_map else 1
 
 st.sidebar.write("---")
 st.sidebar.markdown("""
 <p style='font-size:11px; color:#7f8c8d; line-height:1.4;'>
-<b>🔒 Data Privacy Statement:</b> This CDSS executes machine learning inference locally in web memory. No patient parameters or identification matrices are uploaded or cached to any database, guaranteeing full HIPAA and GDPR compliance.
+<b>🔒 Data Privacy Statement:</b> This CDSS runs machine learning inference locally in browser memory. No patient data or identifiers are uploaded or stored to external databases, fully compliant with HIPAA and GDPR regulations.
 </p>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. 实时计算与智能决策输出面板 (多栏响应式布局)
+# 3. Real-time Risk Calculation & Clinical Recommendation Panel
 # ==============================================================================
 input_data = pd.DataFrame([{
     'gender': gender, 'age': age, 'BMI': BMI, 'Aeterial_cl': Aeterial_cl, 'LCA_dis': LCA_dis, 'tumor_dia': tumor_dia,
@@ -196,7 +198,7 @@ input_data = pd.DataFrame([{
     'protein_lev': protein_lev, 'T_stage': T_stage, 'N_stage': N_stage, 'M_stage': M_stage
 }])
 
-# 通过缩放流水线进行全量预测
+# Model prediction
 risk_probability = model_pipeline.predict_proba(input_data)[0][1]
 
 col1, col2 = st.columns([1, 1.2])
@@ -208,7 +210,7 @@ with col1:
               value=f"{risk_probability * 100:.2f} %")
     st.progress(float(risk_probability))
 
-    # XAI 组件：全量特征基尼重要性分布图 (出版级微调排版)
+    # Feature importance plot
     st.write("")
     st.markdown(
         "<p style='font-size:13px; font-weight:bold; color:#1e3d59; margin-bottom:2px;'>Global Feature Gini Importance Matrix</p>",
@@ -227,32 +229,32 @@ with col2:
     if risk_probability < t_low:
         st.markdown(f"""
             <div class='advice-box low-risk'>
-                <b>风险分层：【LOW-RISK ZONE / 低风险安全代偿型】</b><br><br>
-                <b>临床剖析：</b>当前患者全量特征对应的预测高荧光丢失概率极低（&lt; {t_low * 100:.2f}%）。模型提示该个体侧支循环（肠壁边缘弓/Riolan弓）代偿潜能极佳，切断左结肠动脉（LCA）后对直肠断端的微循环供血无实质性损害。<br><br>
-                <b>🎯 推荐策略：</b>优先推荐实施标准的<b>【肠系膜下动脉根部高位结扎（High Ligation）】</b>。建议从 IMA 根部直接扎断，从而最大化清除 No.253 组根部淋巴结，提高远期肿瘤学根治生存率，且无需过度担心术后发生吻合口缺血或吻合口瘘。
+                <b>Risk Stratification: LOW-RISK ZONE (Good collateral compensation)</b><br><br>
+                <b>Clinical Interpretation:</b> The predicted probability of severe perfusion loss is extremely low (&lt; {t_low * 100:.2f}%). The model indicates robust collateral blood supply from marginal arch / Riolan arch. LCA ligation will not significantly impair distal rectal microcirculation.<br><br>
+                <b>🎯 Recommended Strategy:</b> Perform standard <b>High Ligation of Inferior Mesenteric Artery (IMA root ligation)</b>. Complete root lymphadenectomy of No.253 nodes to maximize oncologic radicality, with minimal risk of postoperative anastomotic ischemia or leak.
             </div>
         """, unsafe_allow_html=True)
 
     elif risk_probability <= t_high:
         st.markdown(f"""
             <div class='advice-box med-risk'>
-                <b>风险分层：【MEDIUM-RISK ZONE / 中风险过渡灰区】</b><br><br>
-                <b>临床剖析：</b>该个体的预测风险处于灰区临界状态（{t_low * 100:.2f}% ~ {t_high * 100:.2f}%）。多因素非线性树状模型提示该患者的边缘弓代偿功能处于动态平衡点，盲目高位切断存在引发残端供血不足的潜在风险。<br><br>
-                <b>🎯 推荐策略：</b>强烈建议采取<b>【术中个体化裁决（Intraoperative Trial Clamping Strategy）】</b>。在术中游离完毕后，使用无损伤血管夹对 LCA 主干进行<b>临时阻断 5 分钟</b>。随后在远端肠壁注射吲哚青绿（ICG），开启荧光腹腔镜实时观测显色速度。若显色完好，可继续行高位结扎；若显色迟缓延迟，应立即转为保留 LCA 方案。
+                <b>Risk Stratification: MEDIUM-RISK ZONE (Critical gray zone)</b><br><br>
+                <b>Clinical Interpretation:</b> Patient risk falls within borderline range ({t_low * 100:.2f}% ~ {t_high * 100}%). The collateral circulation balance is fragile; blind high ligation carries potential risk of distal hypoperfusion.<br><br>
+                <b>🎯 Recommended Strategy:</b> Mandatory <b>Intraoperative Trial Clamping Protocol</b>. Apply temporary vascular clamp on LCA trunk for 5 minutes after full dissection. Inject ICG into distal rectal wall and observe real-time fluorescence perfusion under laparoscopic NIR camera. If sufficient perfusion is confirmed, proceed with high ligation; otherwise switch to LCA-preserving low ligation.
             </div>
         """, unsafe_allow_html=True)
 
     else:
         st.markdown(f"""
             <div class='advice-box high-risk'>
-                <b>风险分层：【HIGH-RISK ZONE / 高风险血管依赖型】</b><br><br>
-                <b>临床剖析：</b>警告！该患者发生重度血流损失的术前预测概率极高（&gt; {t_high * 100:.2f}%）。多维度微血管形态学指标（CT值比值与短径比值）强烈暗示其直肠吻合口对 LCA 具有绝对的“供血依赖性”，一旦盲目切断，灌注丢失将直接跨越 29.33% 的生理安全红线。<br><br>
-                <b>🎯 推荐策略：</b>强烈推荐实施<b>【保留左结肠动脉的低位结扎（Preservation of LCA）】</b>！主刀团队必须在精细化骨骼化清扫 253 组根部淋巴结的同时，妥善、完整保留 LCA 血管主干。严禁贪图清扫便利行根部直接扎断，必须全力守卫吻合口微循环，最大程度规避灾难性吻合口瘘的发生。
+                <b>Risk Stratification: HIGH-RISK ZONE (LCA-dependent perfusion)</b><br><br>
+                <b>Clinical Interpretation:</b> WARNING: Preoperative predicted risk of severe perfusion loss is extremely high (&gt; {t_high * 100:.2f}%). CT vascular metrics indicate rectal anastomosis fully depends on LCA blood supply. Blind root ligation will push slopDA over the safety threshold of 0.2933.<br><br>
+                <b>🎯 Recommended Strategy:</b> Mandatory <b>LCA-Preserving Low Ligation</b>. Skeletonize IMA for complete No.253 lymph node dissection while fully preserving the intact LCA trunk. Avoid root ligation to protect anastomotic microcirculation and prevent catastrophic anastomotic leak.
             </div>
         """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 4. 底部学术注解与免责法律合规声明
+# 4. Academic technical note & clinical disclaimer
 # ==============================================================================
 st.write("---")
 st.markdown(
@@ -261,6 +263,6 @@ st.markdown(
 
 st.markdown("""
 <div class='disclaimer-box'>
-<b>🔬 Clinical Research Disclaimer:</b> This interactive calculation portal is exclusively designed for academic peer review validation, translational medicine verification, and educational assistance. It does not constitute standalone clinical diagnostic evidence or definitive legal practice guidelines. The definitive intraoperative surgical execution and tactical alteration remain under the sole discretion and holistic comprehensive evaluation of the licensed chief surgical team.
+<b>🔬 Clinical Research Disclaimer:</b> This interactive calculator is built exclusively for academic validation, translational research and surgical education. It does not replace formal clinical diagnosis or official surgical guidelines. Final intraoperative decision-making relies on comprehensive clinical judgment of the attending surgeon.
 </div>
 """, unsafe_allow_html=True)
