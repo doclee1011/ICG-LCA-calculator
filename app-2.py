@@ -130,7 +130,7 @@ except Exception as e:
     st.error(f"Failed to load model assets from 'model_assets/'. Please run export_models.py first. Error: {e}")
     st.stop()
 
-# Header
+# Title Header
 st.markdown('<div class="main-header">🩺 LCA-Predict: Decision Support System for Left Colic Artery Preservation</div>', unsafe_allow_html=True)
 st.caption("Individualized Risk Assessment for Left Colic Artery (LCA) Perfusion Dependency | Laparoscopic Rectal Cancer Surgery")
 
@@ -200,29 +200,30 @@ patient_scaled = scaler.transform(df_patient)
 prob_lr = model_lr.predict_proba(patient_scaled)[0, 1]
 prob_svm = model_svm.predict_proba(patient_scaled)[0, 1]
 
-lr_high = (prob_lr >= 0.3021)
-svm_high = (prob_svm >= 0.5000)
+# Unified Probability Cutoff Threshold (30.21% Study Consensus)
+CUTOFF_THRESH = 0.3021
+lr_high = (prob_lr >= CUTOFF_THRESH)
+svm_high = (prob_svm >= CUTOFF_THRESH)
 
 # Decision Fusion Logic
 final_high_risk = lr_high or svm_high
 
-# Selected Engine Determination
 if lr_high and svm_high:
     selected_engine = "BOTH"
-    driver_title = "🎯 CONSENSUS SELECTION: Both Dual-Engine Models Predict High Dependency"
-    driver_desc = "Both Logistic Regression (prob ≥ 30.21%) and SVM (prob ≥ 50.0%) independently confirm High LCA Perfusion Dependency."
+    driver_title = "🎯 CONSENSUS SELECTION: Both Dual-Engine Models Predict High Dependency (Prob ≥ 30.21%)"
+    driver_desc = "Logistic Regression and SVM Safety Engine independently confirm High Perfusion Loss Risk (slopDA ≥ 30.21%)."
 elif svm_high and not lr_high:
     selected_engine = "SVM"
-    driver_title = "🛡️ SAFETY OVERRIDE SELECTION: Clinical Safety Engine (SVM) Selected"
-    driver_desc = "To prevent false negatives and ischemic complications, the SVM Safety Engine (Sensitivity 85.4%, NLR 0.21) overrides the LR prediction."
+    driver_title = "🛡️ SAFETY OVERRIDE SELECTION: Clinical Safety Engine (SVM) Triggered"
+    driver_desc = "To prevent false negatives and ischemic complications, the high-recall SVM Safety Engine (Sensitivity 85.4%, NLR 0.21) flag triggered a High Dependency warning."
 elif lr_high and not svm_high:
     selected_engine = "LR"
-    driver_title = "🎯 THRESHOLD EXCEEDED SELECTION: Precision Calibrated Engine (LR) Selected"
-    driver_desc = "The Precision Calibrated LR Model exceeded the 30.21% consensus cutoff, triggering a high-dependency warning."
+    driver_title = "🎯 THRESHOLD EXCEEDED SELECTION: Precision Calibrated Engine (LR) Triggered"
+    driver_desc = "The Calibrated Risk Probabilities exceeded the 30.21% consensus cutoff, triggering a High Dependency warning."
 else:
     selected_engine = "BOTH"
-    driver_title = "🟢 CONSENSUS SELECTION: Both Dual-Engine Models Confirm Low Dependency"
-    driver_desc = "Both Logistic Regression (< 30.21%) and SVM (< 50.0%) confirm that LCA preservation is not mandatory."
+    driver_title = "🟢 CONSENSUS SELECTION: Both Dual-Engine Models Confirm Low LCA Dependency"
+    driver_desc = "Both Logistic Regression and SVM predict low perfusion loss probability (< 30.21%), confirming LCA preservation is not mandatory."
 
 # Streamlined 2-Tab Layout
 tab1, tab2 = st.tabs([
@@ -266,7 +267,7 @@ with tab1:
         badge_text_svm = "✓ SELECTED FOR FINAL DECISION" if is_svm_selected else "SECONDARY ENGINE"
 
         svm_status_badge = "status-badge-high" if svm_high else "status-badge-low"
-        svm_status_text = "🔴 HIGH RISK (≥ 50.0%)" if svm_high else "🟢 LOW RISK (< 50.0%)"
+        svm_status_text = "🔴 HIGH RISK (≥ 30.21%)" if svm_high else "🟢 LOW RISK (< 30.21%)"
 
         st.markdown(f"""
         <div class="{card_class_svm}">
@@ -275,12 +276,12 @@ with tab1:
             <div style="font-size:34px; font-weight:800; color:#2D3748; margin:6px 0;">{prob_svm * 100:.1f}%</div>
             <div style="margin-bottom:8px;"><span class="{svm_status_badge}">{svm_status_text}</span></div>
             <p style="font-size:11px; color:#718096; margin-bottom:0;">
-                <b>Classification Threshold:</b> 50.0% | <b>Sensitivity:</b> 85.4% (Min. Missed Cases) | <b>NLR:</b> 0.21
+                <b>Cutoff Threshold:</b> 30.21% | <b>Sensitivity:</b> 85.4% (Min. False Negatives) | <b>NLR:</b> 0.21
             </p>
         </div>
         """, unsafe_allow_html=True)
 
-    # Arbitration Explanation Banner
+    # Arbitration Banner
     st.markdown(f"""
     <div class="arbitration-banner">
         <div style="font-size:14px; font-weight:700; color:#1A365D;">{driver_title}</div>
@@ -288,7 +289,7 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # Final Operative Recommendation Banner
+    # Final Recommendation Banner
     if final_high_risk:
         st.markdown("""
         <div class="high-risk-card">
@@ -321,7 +322,7 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-    # Section 2: Patient Anatomical Risk Factor Profiling
+    # Section 2: Patient Anatomical Risk Factor Profile
     st.subheader("2. Patient Anatomical Risk Factor Profile")
     st.caption("This module profiles individualized vascular geometry by mapping active risk factors against multivariable Odds Ratios (OR) from our clinical cohort.")
 
