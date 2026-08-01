@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Modern, Clean Custom CSS
+# 2. Clean Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -29,7 +29,7 @@ st.markdown("""
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
         border-radius: 8px;
-        padding: 14px;
+        padding: 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         text-align: center;
     }
@@ -53,25 +53,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# 3. Load Model Assets from `model_assets/` (Zero Raw Data Leakage)
+# 3. Load Pre-trained Dual-Engine Model Assets (No raw data leakage)
 @st.cache_resource
 def load_assets():
     asset_dir = 'model_assets'
     scaler = joblib.load(os.path.join(asset_dir, 'scaler.joblib'))
     model_lr = joblib.load(os.path.join(asset_dir, 'lr_model.joblib'))
     model_svm = joblib.load(os.path.join(asset_dir, 'svm_model.joblib'))
-    model_rf = joblib.load(os.path.join(asset_dir, 'rf_model.joblib'))
 
     preop_vars = [
         'gender', 'age', 'BMI', 'Aeterial_cl', 'LCA_dis', 'tumor_dia',
         'Ctvalue', 'diameter', 'tumor_dis', 'CEA', 'CA199', 'protein_lev',
         'T_stage', 'N_stage', 'M_stage'
     ]
-    return scaler, model_lr, model_svm, model_rf, preop_vars
+    return scaler, model_lr, model_svm, preop_vars
 
 
 try:
-    scaler, model_lr, model_svm, model_rf, preop_vars = load_assets()
+    scaler, model_lr, model_svm, preop_vars = load_assets()
 except Exception as e:
     st.error(f"Failed to load model assets from 'model_assets/'. Please run export_models.py first. Error: {e}")
     st.stop()
@@ -80,7 +79,7 @@ except Exception as e:
 st.markdown('<div class="main-header">🩺 LCA-Predict: Decision Support System for Left Colic Artery Preservation</div>', unsafe_allow_html=True)
 st.caption("Individualized Risk Assessment for Left Colic Artery (LCA) Perfusion Dependency | Laparoscopic Rectal Cancer Surgery")
 
-# Sidebar: Input Panel
+# Sidebar: Patient Parameter Inputs
 st.sidebar.header("📋 Patient Parameters")
 
 with st.sidebar.expander("🧬 1. Vascular Geometry Features", expanded=True):
@@ -143,10 +142,9 @@ patient_data = {
 df_patient = pd.DataFrame([patient_data])[preop_vars]
 patient_scaled = scaler.transform(df_patient)
 
-# Predictions
+# Dual-Engine Inference
 prob_lr = model_lr.predict_proba(patient_scaled)[0, 1]
 prob_svm = model_svm.predict_proba(patient_scaled)[0, 1]
-prob_rf = model_rf.predict_proba(patient_scaled)[0, 1]
 
 # Streamlined 2-Tab Layout
 tab1, tab2 = st.tabs([
@@ -155,19 +153,20 @@ tab1, tab2 = st.tabs([
 ])
 
 # ==============================================================================
-# TAB 1: Assessment & Strategy
+# TAB 1: Assessment & Surgical Strategy
 # ==============================================================================
 with tab1:
-    st.subheader("1. AI Multi-Engine Risk Assessment")
+    st.subheader("1. Dual-Engine Risk Assessment")
 
-    col1, col2, col3 = st.columns(3)
+    # Clean 2-Column Layout
+    col1, col2 = st.columns(2)
 
     with col1:
         st.markdown(f"""
         <div class="metric-card-container">
-            <span style="font-size:12px; color:#718096; font-weight:bold;">Precision Calibrated Engine (LR)</span>
-            <div style="font-size:26px; font-weight:800; color:#2B6CB0; margin:6px 0;">{prob_lr * 100:.1f}%</div>
-            <span style="font-size:11px; color:#4A5568;">Brier Score: 0.174 | AUC: 0.809</span>
+            <span style="font-size:12px; color:#718096; font-weight:bold;">Precision Calibrated Engine (Logistic Regression)</span>
+            <div style="font-size:28px; font-weight:800; color:#2B6CB0; margin:6px 0;">{prob_lr * 100:.1f}%</div>
+            <span style="font-size:11px; color:#4A5568;">Brier Error: 0.174 (Best Calibration) | AUC: 0.809</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -176,22 +175,13 @@ with tab1:
         svm_status_text = "High Dependency Warning" if prob_svm >= 0.50 else "Low Dependency (Safe)"
         st.markdown(f"""
         <div class="metric-card-container">
-            <span style="font-size:12px; color:#718096; font-weight:bold;">Clinical Safety Engine (SVM)</span>
-            <div style="font-size:22px; font-weight:800; color:{svm_status_color}; margin:8px 0;">{svm_status_text}</div>
-            <span style="font-size:11px; color:#4A5568;">Sensitivity: 85.4% | NLR: 0.21</span>
+            <span style="font-size:12px; color:#718096; font-weight:bold;">Clinical Safety Engine (Support Vector Machine)</span>
+            <div style="font-size:24px; font-weight:800; color:{svm_status_color}; margin:8px 0;">{svm_status_text}</div>
+            <span style="font-size:11px; color:#4A5568;">Sensitivity: 85.4% (Min. False Negatives) | NLR: 0.21</span>
         </div>
         """, unsafe_allow_html=True)
 
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card-container">
-            <span style="font-size:12px; color:#718096; font-weight:bold;">Generalization Engine (Random Forest)</span>
-            <div style="font-size:26px; font-weight:800; color:#2D3748; margin:6px 0;">{prob_rf * 100:.1f}%</div>
-            <span style="font-size:11px; color:#4A5568;">CV AUC: 0.799 | Zero Overfitting</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Decision Banner
+    # Decision Banner (Fusion Logic)
     is_high_risk = (prob_lr >= 0.3021) or (prob_svm >= 0.50)
 
     if is_high_risk:
@@ -205,7 +195,7 @@ with tab1:
             <b>Clinical Rationale:</b>
             <ul>
                 <li>LCA clamping is predicted to cause <b>> 30.21% drop</b> in rectal stump perfusion slope (Mean loss in high-risk cohort: <b>47.5%</b>).</li>
-                <li>Marginal artery collateral is insufficient. High ligation at IMA root carries a substantial risk of anastomotic stump ischemia.</li>
+                <li>Marginal artery collateral network is insufficient. Ligation at IMA root carries a substantial risk of anastomotic stump ischemia.</li>
                 <li><b>Action:</b> Dissect Station 253 lymph nodes, preserve the LCA trunk, and divide IMA distal to the LCA origin.</li>
             </ul>
         </div>
@@ -245,8 +235,8 @@ with tab1:
     else:
         st.info("ℹ️ No dominant anatomical risk features detected.")
 
-    # Attribution plot
-    fig_attr, ax_attr = plt.subplots(figsize=(7, 2.8), dpi=150)
+    # Attribution Plot
+    fig_attr, ax_attr = plt.subplots(figsize=(7, 2.5), dpi=150)
     features_names = ['CT Ratio > 0.52', 'Diameter Ratio > 0.63', 'Type-2 Trifurcation', 'Proximal Origin ≤ 3.5cm', 'BMI > 24 kg/m²']
     presence = [ctvalue_val, diameter_val, arterial_val, 1 if lca_dis_val == 0 else 0, bmi_val]
     colors_bar = ['#E53E3E' if p == 1 else '#CBD5E0' for p in presence]
@@ -261,7 +251,7 @@ with tab1:
     st.pyplot(fig_attr)
 
 # ==============================================================================
-# TAB 2: Pitching & Presentation Guide
+# TAB 2: Reviewer & Presentation Guide
 # ==============================================================================
 with tab2:
     st.subheader("📘 Presentation & Peer-Review Pitching Guide")
@@ -271,17 +261,17 @@ with tab2:
     with col_a:
         st.markdown("""
         <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
-            <h4 style="color:#2B6CB0; margin-top:0;">👨‍⚕️ 1. For Clinical Surgical Reviewers</h4>
+            <h4 style="color:#2B6CB0; margin-top:0;">👨‍⚕️ 1. Addressing Clinical Surgical Reviewers</h4>
             <b>Key Concern:</b> "Is the AI safe? Will it misclassify high-risk cases?"<br><br>
             <b>Recommended Pitch:</b><br>
-            "In intraoperative guidance, <b>avoiding false negatives is paramount</b>. Our app deploys a <b>Support Vector Machine (SVM) Safety Engine</b>, achieving the <b>highest sensitivity (85.4%)</b> and <b>lowest negative likelihood ratio (NLR = 0.21)</b> to offer maximum safety against stump ischemia."
+            "In intraoperative decision support, <b>minimizing false negatives is paramount</b>. Our app deploys a <b>Support Vector Machine (SVM) Safety Engine</b>, achieving the <b>highest sensitivity (85.4%)</b> and <b>lowest negative likelihood ratio (NLR = 0.21)</b> to offer maximum protection against stump ischemia."
         </div>
         """, unsafe_allow_html=True)
 
     with col_b:
         st.markdown("""
         <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
-            <h4 style="color:#2B6CB0; margin-top:0;">📊 2. For Statistical & AI Reviewers</h4>
+            <h4 style="color:#2B6CB0; margin-top:0;">📊 2. Addressing Statistical & AI Reviewers</h4>
             <b>Key Concern:</b> "Is the risk percentage calibrated? Has it overfitted?"<br><br>
             <b>Recommended Pitch:</b><br>
             "Our app integrates a <b>Logistic Regression Precision Engine</b> for risk scoring, yielding the <b>lowest calibration error (Brier Score = 0.174)</b> and a test-set AUC of <b>0.809</b>, adhering strictly to TRIPOD-AI guidelines."
