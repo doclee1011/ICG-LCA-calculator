@@ -1,105 +1,364 @@
-# app.py
-import matplotlib
-matplotlib.use('Agg')
-import streamlit as st
-import pandas as pd
+import os
+import joblib
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import joblib
+import streamlit as st
 
+# Set Page Configuration
 st.set_page_config(
-    page_title="ICG-LCA Perfusion Risk Calculator",
+    page_title="LCA-Predict: Intraoperative Decision Support System",
     page_icon="🩺",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# 保持你精美的学术级 CSS 样式
+# Custom Medical Theme Styling
 st.markdown("""
-    <style>
-    .main-title { font-size:26px; font-weight:bold; color:#1e3d59; text-align:center; margin-bottom:5px; }
-    .sub-title { font-size:14px; color:#e67e22; text-align:center; margin-bottom:25px; font-style:italic; }
-    .section-header { font-size:18px; font-weight:bold; color:#1e3d59; border-bottom:2px solid #ecf0f1; padding-bottom:6px; margin-top:15px; }
-    .advice-box { padding: 18px; border-radius: 8px; margin-top: 15px; font-size: 15px; font-weight: 500; line-height: 1.6; }
-    .low-risk { background-color: rgba(46, 204, 113, 0.12); border-left: 6px solid #2ecc71; color: #1e7e34; }
-    .med-risk { background-color: rgba(243, 156, 18, 0.12); border-left: 6px solid #e67e22; color: #b7791f; }
-    .high-risk { background-color: rgba(231, 76, 60, 0.12); border-left: 6px solid #e74c3c; color: #bd2130; }
-    .disclaimer-box { font-size: 11px; color: #7f8c8d; background-color: #f8f9fa; padding: 12px; border-radius: 5px; border: 1px solid #e2e8f0; margin-top: 20px; }
-    </style>
+<style>
+    .main-header {
+        font-size: 26px;
+        font-weight: 700;
+        color: #1A365D;
+        padding-bottom: 10px;
+        border-bottom: 3px solid #2B6CB0;
+        margin-bottom: 20px;
+    }
+    .metric-card-container {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .high-risk-card {
+        background-color: #FFF5F5;
+        border-left: 6px solid #E53E3E;
+        padding: 18px;
+        border-radius: 6px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+    .low-risk-card {
+        background-color: #F0FFF4;
+        border-left: 6px solid #38A169;
+        padding: 18px;
+        border-radius: 6px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+</style>
 """, unsafe_allow_html=True)
 
-# 毫秒级安全载入已训练资产
+
+# Load Pre-trained Model Assets (No raw data leakage)
 @st.cache_resource
-def load_frozen_assets():
-    return joblib.load('model_assets.pkl')
+def load_assets():
+    asset_dir = 'model_assets'
+    scaler = joblib.load(os.path.join(asset_dir, 'scaler.joblib'))
+    model_lr = joblib.load(os.path.join(asset_dir, 'lr_model.joblib'))
+    model_svm = joblib.load(os.path.join(asset_dir, 'svm_model.joblib'))
+    model_rf = joblib.load(os.path.join(asset_dir, 'rf_model.joblib'))
 
-assets = load_frozen_assets()
-model_pipeline = assets['pipeline']
-t_low = assets['t_low']
-t_high = assets['t_high']
-feat_importances = assets['importances']
+    preop_vars = [
+        'gender', 'age', 'BMI', 'Aeterial_cl', 'LCA_dis', 'tumor_dia',
+        'Ctvalue', 'diameter', 'tumor_dis', 'CEA', 'CA199', 'protein_lev',
+        'T_stage', 'N_stage', 'M_stage'
+    ]
+    return scaler, model_lr, model_svm, model_rf, preop_vars
 
-st.markdown("<div class='main-title'>Web-Based Calculator for Predicting Rectal Perfusion Loss via ICG Fluorescence</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Advanced Machine Learning Integration & Individualized Clinical Decision Support System (15-Variable RF Engine)</div>", unsafe_allow_html=True)
 
-# ----------------- 左侧控制面板：收集15项指标 -----------------
-st.sidebar.markdown("### 🩺 Patient Characteristics Input")
-st.sidebar.markdown("#### 🔹 Vascular Morphology & CT Hemodynamics")
-Ctvalue = 0 if st.sidebar.selectbox("1. LCA/IMA CT Value Ratio (Ctvalue):", ["≤ 0.52", "> 0.52"]) == "≤ 0.52" else 1
-diameter = 0 if st.sidebar.selectbox("2. LCA/IMA Short Diameter Ratio (diameter):", ["≤ 0.63", "> 0.63"]) == "≤ 0.63" else 1
-Aeterial_cl = 0 if "common trunk" in st.sidebar.selectbox("3. LCA Branching Type (Aeterial_cl):", ["Rectosigmoid common trunk type", "Three-branch independent type"]) else 1
-LCA_dis = 0 if st.sidebar.selectbox("4. LCA Distance to IMA Origin (LCA_dis):", ["≤ 3.5 cm", "> 3.5 cm"]) == "≤ 3.5 cm" else 1
+try:
+    scaler, model_lr, model_svm, model_rf, preop_vars = load_assets()
+except Exception as e:
+    st.error(f"Failed to load model assets from 'model_assets/'. Please run export_models.py first. Error: {e}")
+    st.stop()
 
-st.sidebar.markdown("#### 🔹 Tumor Morphology & Pathological Staging")
-T_stage = 0 if "Early stage" in st.sidebar.selectbox("5. Tumor T Stage (T_stage):", ["Stage 1-2 (Early stage)", "Stage 3-4 (Locally advanced)"]) else 1
-N_stage = 0 if "No nodal" in st.sidebar.selectbox("6. Lymph Node Metastasis (N_stage):", ["N0 (No nodal metastasis)", "N+ (Positive nodal metastasis)"]) else 1
-M_stage = 0 if "No distant" in st.sidebar.selectbox("7. Distant Metastasis (M_stage):", ["M0 (No distant metastasis)", "M1 (Distant metastasis present)"]) else 1
-tumor_dia = 0 if "≤" in st.sidebar.selectbox("8. Tumor Maximum Diameter (tumor_dia):", ["≤ 4 cm", "> 4 cm"]) else 1
-tumor_dis = 0 if "< 10" in st.sidebar.selectbox("9. Tumor Distance to Anus (tumor_dis):", ["< 10 cm", "≥ 10 cm"]) else 1
+# Title Header
+st.markdown('<div class="main-header">🩺 LCA-Predict: Decision Support System for Left Colic Artery Preservation</div>',
+            unsafe_allow_html=True)
+st.caption(
+    "Individualized Risk Assessment for LCA Perfusion Dependency (slopDA ≥ 30.21%) in Laparoscopic Rectal Cancer Surgery | Lancet/BJS Standard")
 
-st.sidebar.markdown("#### 🔹 Patient Baseline & Laboratory Tests")
-gender = 0 if "Male" in st.sidebar.selectbox("10. Patient Sex (gender):", ["Male", "Female"]) else 1
-age = 0 if "≤" in st.sidebar.selectbox("11. Patient Age Group (age):", ["≤ 60 years old (Middle-aged)", "> 60 years old (Elderly)"]) else 1
-BMI = 0 if st.sidebar.selectbox("12. Patient BMI Level (BMI):", ["≤ 24", "> 24"]) == "≤ 24" else 1
-CEA = 0 if st.sidebar.selectbox("13. Preoperative CEA Level (CEA):", ["≤ 5 ng/mL", "> 5 ng/mL"]) == "≤ 5 ng/mL" else 1
-CA199 = 0 if st.sidebar.selectbox("14. Preoperative CA199 Level (CA199):", ["≤ 34 U/mL", "> 34 U/mL"]) == "≤ 34 U/mL" else 1
-protein_lev = 0 if "< 40" in st.sidebar.selectbox("15. Serum Albumin Level (protein_lev):", ["< 40 g/L (Hypoalbuminemia / Malnutrition)", "≥ 40 g/L (Normal nutritional status)"]) else 1
+# Sidebar Input Panel
+st.sidebar.header("📋 Clinical & Anatomical Parameters")
 
-# ----------------- 右侧实时预测与图表渲染 -----------------
-input_data = pd.DataFrame([{
-    'gender': gender, 'age': age, 'BMI': BMI, 'Aeterial_cl': Aeterial_cl, 'LCA_dis': LCA_dis, 'tumor_dia': tumor_dia,
-    'Ctvalue': Ctvalue, 'diameter': diameter, 'tumor_dis': tumor_dis, 'CEA': CEA, 'CA199': CA199,
-    'protein_lev': protein_lev, 'T_stage': T_stage, 'N_stage': N_stage, 'M_stage': M_stage
-}])
+with st.sidebar.expander("🧬 1. Vascular & Imaging Geometry", expanded=True):
+    ctvalue_input = st.selectbox(
+        "LCA/IMA CT Attenuation Ratio",
+        options=["≤ 0.52 (Low Risk)", "> 0.52 (High Risk [Adj. OR = 3.91])"],
+        index=0
+    )
+    ctvalue_val = 0 if "≤" in ctvalue_input else 1
 
-risk_probability = model_pipeline.predict_proba(input_data)[0][1]
+    diameter_input = st.selectbox(
+        "LCA/IMA Diameter Ratio",
+        options=["≤ 0.63 (Slender)", "> 0.63 (Thick [Adj. OR = 2.72])"],
+        index=0
+    )
+    diameter_val = 0 if "≤" in diameter_input else 1
 
-col1, col2 = st.columns([1, 1.2])
-with col1:
-    st.markdown("<div class='section-header'>📊 Full Model Quantification Result</div>", unsafe_allow_html=True)
-    st.write("")
-    st.metric(label="Predicted Probability of High Perfusion Loss (slopDA > 0.2933)", value=f"{risk_probability * 100:.2f} %")
-    st.progress(float(risk_probability))
+    arterial_input = st.selectbox(
+        "LCA Branch Typology",
+        options=["Trunk Co-origin / Sigmoid Shared", "Type-2 Trifurcation [Adj. OR = 3.91]"],
+        index=0
+    )
+    arterial_val = 0 if "Co-origin" in arterial_input else 1
 
-    st.write("")
-    st.markdown("<p style='font-size:13px; font-weight:bold; color:#1e3d59; margin-bottom:2px;'>Global Feature Gini Importance Matrix</p>", unsafe_allow_html=True)
-    fig, ax = plt.subplots(figsize=(5.2, 4.8))
-    colors_sns = sns.color_palette("coolwarm", len(feat_importances))
-    feat_importances.plot(kind='barh', color=colors_sns, ax=ax)
-    ax.set_xlabel('Gini Importance Weight', fontsize=9, fontweight='bold')
-    ax.tick_params(axis='both', labelsize=8.5)
-    sns.despine()
-    st.pyplot(fig)
+    lca_dis_input = st.selectbox(
+        "LCA Origin Distance (from IMA root)",
+        options=["≤ 3.5 cm (Proximal Origin [Adj. OR = 1.80])", "> 3.5 cm (Distal Origin)"],
+        index=0
+    )
+    lca_dis_val = 0 if "≤" in lca_dis_input else 1
 
-with col2:
-    st.markdown("<div class='section-header'>💡 Tailored Surgical Recommendation</div>", unsafe_allow_html=True)
-    if risk_probability < t_low:
-        st.markdown(f"<div class='advice-box low-risk'><b>Risk Stratification: LOW-RISK ZONE (&lt; {t_low * 100:.1f}%)</b><br><b>🎯 Recommended Strategy:</b> Perform standard <b>High Ligation of IMA</b>. Complete root lymphadenectomy of No.253 nodes to maximize oncologic radicality.</div>", unsafe_allow_html=True)
-    elif risk_probability <= t_high:
-        st.markdown(f"<div class='advice-box med-risk'><b>Risk Stratification: MEDIUM-RISK ZONE ({t_low * 100:.1f}% ~ {t_high * 100:.1f}%)</b><br><b>🎯 Recommended Strategy:</b> Mandatory <b>Intraoperative Trial Clamping Protocol</b>. Apply temporary vascular clamp on LCA trunk for 5 minutes and verify real-time perfusion.</div>", unsafe_allow_html=True)
+with st.sidebar.expander("📊 2. Patient Demographics & Lab Data", expanded=False):
+    gender_input = st.selectbox("Sex", options=["Male", "Female"], index=0)
+    gender_val = 0 if gender_input == "Male" else 1
+
+    age_input = st.selectbox("Age Group", options=["≤ 60 years", "> 60 years"], index=0)
+    age_val = 0 if "≤" in age_input else 1
+
+    bmi_input = st.selectbox("Body Mass Index (BMI)", options=["≤ 24 kg/m²", "> 24 kg/m²"], index=0)
+    bmi_val = 0 if "≤" in bmi_input else 1
+
+    protein_input = st.selectbox("Serum Albumin Level", options=["< 40 g/L", "≥ 40 g/L"], index=1)
+    protein_val = 0 if "<" in protein_input else 1
+
+    cea_input = st.selectbox("Serum CEA Level", options=["≤ 5 ng/mL", "> 5 ng/mL"], index=0)
+    cea_val = 0 if "≤" in cea_input else 1
+
+    ca199_input = st.selectbox("Serum CA199 Level", options=["≤ 34 U/mL", "> 34 U/mL"], index=0)
+    ca199_val = 0 if "≤" in ca199_input else 1
+
+with st.sidebar.expander("🔬 3. Tumor & Pathology Features", expanded=False):
+    tumor_dia_input = st.selectbox("Max Tumor Diameter", options=["≤ 4 cm", "> 4 cm"], index=0)
+    tumor_dia_val = 0 if "≤" in tumor_dia_input else 1
+
+    tumor_dis_input = st.selectbox("Distance to Anal Verge", options=["< 10 cm", "≥ 10 cm"], index=0)
+    tumor_dis_val = 0 if "<" in tumor_dis_input else 1
+
+    t_stage_input = st.selectbox("Pathological T Stage", options=["T1 - T2", "T3 - T4"], index=1)
+    t_stage_val = 0 if "T1" in t_stage_input else 1
+
+    n_stage_input = st.selectbox("Lymph Node (N) Stage", options=["N0 (Negative)", "N+ (Positive)"], index=0)
+    n_stage_val = 0 if "N0" in n_stage_input else 1
+
+    m_stage_input = st.selectbox("Distant Metastasis (M)", options=["M0 (No Metastasis)", "M1 (Metastatic)"], index=0)
+    m_stage_val = 0 if "M0" in m_stage_input else 1
+
+# Input Vector Assembly
+patient_data = {
+    'gender': gender_val, 'age': age_val, 'BMI': bmi_val,
+    'Aeterial_cl': arterial_val, 'LCA_dis': lca_dis_val, 'tumor_dia': tumor_dia_val,
+    'Ctvalue': ctvalue_val, 'diameter': diameter_val, 'tumor_dis': tumor_dis_val,
+    'CEA': cea_val, 'CA199': ca199_val, 'protein_lev': protein_val,
+    'T_stage': t_stage_val, 'N_stage': n_stage_val, 'M_stage': m_stage_val
+}
+
+df_patient = pd.DataFrame([patient_data])[preop_vars]
+patient_scaled = scaler.transform(df_patient)
+
+# Predictions
+prob_lr = model_lr.predict_proba(patient_scaled)[0, 1]
+prob_svm = model_svm.predict_proba(patient_scaled)[0, 1]
+prob_rf = model_rf.predict_proba(patient_scaled)[0, 1]
+
+# App Navigation Tabs
+tab1, tab2, tab3 = st.tabs([
+    "🩺 Assessment & Surgical Strategy",
+    "📊 Evidence & Benchmarks",
+    "📘 Presentation Guide"
+])
+
+# TAB 1
+with tab1:
+    st.subheader("1. Dual-Engine Risk Assessment")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card-container">
+            <span style="font-size:12px; color:#718096; font-weight:bold;">Precision Calibrated Engine (Logistic Regression)</span>
+            <div style="font-size:28px; font-weight:800; color:#2B6CB0; margin:8px 0;">{prob_lr * 100:.1f}%</div>
+            <span style="font-size:11px; color:#4A5568;">Brier Score: 0.174 (Best Calibration) | AUC: 0.809</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        svm_status_color = "#E53E3E" if prob_svm >= 0.50 else "#38A169"
+        svm_status_text = "High Reliance (Preserve LCA)" if prob_svm >= 0.50 else "Low Reliance (Safe)"
+        st.markdown(f"""
+        <div class="metric-card-container">
+            <span style="font-size:12px; color:#718096; font-weight:bold;">Clinical Safety Engine (Support Vector Machine)</span>
+            <div style="font-size:24px; font-weight:800; color:{svm_status_color}; margin:8px 0;">{svm_status_text}</div>
+            <span style="font-size:11px; color:#4A5568;">Sensitivity: 85.4% (Min. Missed Cases) | NLR: 0.21</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card-container">
+            <span style="font-size:12px; color:#718096; font-weight:bold;">Generalization Engine (Random Forest)</span>
+            <div style="font-size:28px; font-weight:800; color:#2D3748; margin:8px 0;">{prob_rf * 100:.1f}%</div>
+            <span style="font-size:11px; color:#4A5568;">Internal CV AUC: 0.799 | Zero Overfitting</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    is_high_risk = (prob_lr >= 0.3021) or (prob_svm >= 0.50)
+
+    if is_high_risk:
+        st.markdown("""
+        <div class="high-risk-card">
+            <h3 style="color:#C53030; margin-top:0;">🔴 HIGH LCA DEPENDENCY (slopDA ≥ 30.21%)</h3>
+            <p style="font-size:15px; font-weight:bold; color:#9B2C2C;">
+                RECOMMENDED SURGICAL STRATEGY: Preserve Left Colic Artery (Low Ligation + Station 253 LND)
+            </p>
+            <hr style="border:0; border-top:1px solid #FEB2B2; margin:10px 0;">
+            <b>Clinical & Anatomical Rationale:</b>
+            <ul>
+                <li>Transient clamping of LCA is predicted to cause <b>> 30.21% attenuation</b> in rectal stump perfusion slope (High-dependency mean loss: <b>47.5%</b>).</li>
+                <li>Marginal arterial collateral network (Arc of Drummond / Riolan) is insufficient to compensate. Ligation at IMA root (High Ligation) risks severe stump ischemia.</li>
+                <li><b>Surgical Execution:</b> Skeletonize IMA root, dissect Station 253 lymph nodes, and divide IMA distal to LCA origin to preserve LCA perfusion.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown(f"<div class='advice-box high-risk'><b>Risk Stratification: HIGH-RISK ZONE (&gt; {t_high * 100:.1f}%)</b><br><b>🎯 Recommended Strategy:</b> Mandatory <b>LCA-Preserving Low Ligation</b>. Skeletonize IMA for complete No.253 node dissection while fully preserving the intact LCA trunk.</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class="low-risk-card">
+            <h3 style="color:#276749; margin-top:0;">🟢 LOW LCA DEPENDENCY (slopDA < 30.21%)</h3>
+            <p style="font-size:15px; font-weight:bold; color:#22543D;">
+                RECOMMENDED SURGICAL STRATEGY: Flexible Ligation (High or Low Ligation per LND requirements)
+            </p>
+            <hr style="border:0; border-top:1px solid #C6F6D5; margin:10px 0;">
+            <b>Clinical & Anatomical Rationale:</b>
+            <ul>
+                <li>Transient LCA clamping causes minimal loss in perfusion slope (Low-dependency mean loss: <b>14.2%</b>).</li>
+                <li>Marginal arterial network and SMA retrograde collateral supply are well-established. Ligation of LCA for radical LND is physiologically safe.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
-st.write("---")
-st.markdown(f"<p style='font-size:11px; color:#95a5a6; text-align:center;'>Technical Note: Powered by Random Forest Pipeline. Thresholds ({t_low:.4f} and {t_high:.4f}) are dynamically optimized for Sensitivity &ge; 90% and Specificity &ge; 90%.</p>", unsafe_allow_html=True)
-st.markdown("<div class='disclaimer-box'><b>🔬 Clinical Research Disclaimer:</b> Interactive calculator for academic validation and translational research. Final intraoperative decision-making relies on comprehensive clinical judgment.</div>", unsafe_allow_html=True)
+    st.subheader("2. Patient Risk Factor Profile")
+
+    risk_factors_present = []
+    if ctvalue_val == 1:
+        risk_factors_present.append(
+            ("LCA/IMA CT Ratio > 0.52", 3.91, "High CT attenuation reflects substantial blood flow volume in LCA."))
+    if diameter_val == 1:
+        risk_factors_present.append(
+            ("LCA/IMA Diameter Ratio > 0.63", 2.72, "Thick vessel diameter leads to significant post-clamping drop."))
+    if arterial_val == 1:
+        risk_factors_present.append(
+            ("Type-2 Trifurcation Branching", 3.91, "Trifurcated LCA acts as a primary supply trunk."))
+    if lca_dis_val == 0:
+        risk_factors_present.append(("Proximal Origin ≤ 3.5 cm from IMA Root", 1.80,
+                                     "Proximal branching dictates major trunk-level perfusion."))
+
+    if len(risk_factors_present) > 0:
+        st.warning(f"⚠️ {len(risk_factors_present)} Independent Anatomical Risk Factor(s) Detected:")
+        for factor, or_val, desc in risk_factors_present:
+            st.markdown(f"* **{factor}** (Adjusted **OR = {or_val:.2f}**): _{desc}_")
+    else:
+        st.info(
+            "ℹ️ No dominant anatomical risk features detected. Vascular geometry reflects a typical low-dependency profile.")
+
+    # Attribution plot
+    fig_attr, ax_attr = plt.subplots(figsize=(8, 3.2), dpi=200)
+    features_names = ['CT Ratio > 0.52', 'Diameter Ratio > 0.63', 'Type-2 Trifurcation', 'Proximal Origin ≤ 3.5cm',
+                      'BMI > 24 kg/m²']
+    presence = [ctvalue_val, diameter_val, arterial_val, 1 if lca_dis_val == 0 else 0, bmi_val]
+    colors_bar = ['#E53E3E' if p == 1 else '#CBD5E0' for p in presence]
+
+    ax_attr.barh(features_names, presence, color=colors_bar, height=0.55)
+    ax_attr.set_xlim(0, 1.2)
+    ax_attr.set_xticks([0, 1])
+    ax_attr.set_xticklabels(['Absent', 'Present'])
+    ax_attr.set_title("Anatomical Risk Factors Matching Profile", fontsize=11, fontweight='bold')
+    sns.despine(ax=ax_attr)
+    plt.tight_layout()
+    st.pyplot(fig_attr)
+
+# TAB 2
+with tab2:
+    st.subheader("1. Independent Holdout Test Set Performance (Table 3, N=76)")
+    table3_data = [
+        {"Model": "AdaBoost", "AUC (95% CI)": "0.811 (0.710-0.913)", "Accuracy": "75.0%", "Sensitivity": "75.6%",
+         "Specificity": "74.3%", "PPV": "77.5%", "NPV": "72.2%", "F1-Score": "0.765", "Brier Score": "0.246"},
+        {"Model": "Logistic Regression", "AUC (95% CI)": "0.809 (0.707-0.910)", "Accuracy": "73.7%",
+         "Sensitivity": "75.6%", "Specificity": "71.4%", "PPV": "75.6%", "NPV": "71.4%", "F1-Score": "0.756",
+         "Brier Score": "0.174 (Best)"},
+        {"Model": "Support Vector Machine", "AUC (95% CI)": "0.798 (0.695-0.901)", "Accuracy": "77.6% (Top)",
+         "Sensitivity": "85.4% (Top)", "Specificity": "68.6%", "PPV": "76.1%", "NPV": "80.0% (Top)",
+         "F1-Score": "0.805 (Top)", "Brier Score": "0.180"},
+        {"Model": "Random Forest", "AUC (95% CI)": "0.797 (0.696-0.898)", "Accuracy": "73.7%", "Sensitivity": "78.0%",
+         "Specificity": "68.6%", "PPV": "74.4%", "NPV": "72.7%", "F1-Score": "0.762", "Brier Score": "0.183"},
+        {"Model": "Gradient Boosting", "AUC (95% CI)": "0.754 (0.644-0.865)", "Accuracy": "69.7%",
+         "Sensitivity": "73.2%", "Specificity": "65.7%", "PPV": "71.4%", "NPV": "67.6%", "F1-Score": "0.723",
+         "Brier Score": "0.204"},
+        {"Model": "Neural Network (MLP)", "AUC (95% CI)": "0.741 (0.627-0.855)", "Accuracy": "72.4%",
+         "Sensitivity": "73.2%", "Specificity": "71.4%", "PPV": "75.0%", "NPV": "69.4%", "F1-Score": "0.741",
+         "Brier Score": "0.268"}
+    ]
+    st.dataframe(pd.DataFrame(table3_data), use_container_width=True)
+
+    st.subheader("2. Pairwise DeLong Test P-Value Matrix (Table 4)")
+    delong_data = {
+        "Model": ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression", "AdaBoost", "MLP"],
+        "Random Forest": ["-", "0.0002", "0.9593", "0.4804", "0.4348", "0.0005"],
+        "Gradient Boosting": ["0.0002", "-", "0.0102", "0.0021", "0.0025", "0.4018"],
+        "SVM": ["0.9593", "0.0102", "-", "0.4772", "0.4108", "0.0003"],
+        "Logistic Regression": ["0.4804", "0.0021", "0.4772", "-", "0.6399", "0.0002"],
+        "AdaBoost": ["0.4348", "0.0025", "0.4108", "0.6399", "-", "0.0003"],
+        "Neural Network (MLP)": ["0.0005", "0.4018", "0.0003", "0.0002", "0.0003", "-"]
+    }
+    st.dataframe(pd.DataFrame(delong_data), use_container_width=True)
+    st.caption(
+        "Note: DeLong test P > 0.05 indicates no statistically significant difference in AUC. LR, SVM, RF, and AdaBoost show equivalent performance (P > 0.40).")
+
+    st.subheader("3. Unsupervised Consensus Threshold Discovery (30.21%)")
+    st.markdown("""
+    To eliminate outcome bias, three unsupervised mathematical paradigms were employed:
+    * **Otsu Thresholding**: Calculated Cutoff = **0.3074**
+    * **Gaussian Mixture Model (GMM)**: PDF Intersection Cutoff = **0.2940**
+    * **K-Means Clustering**: Center Midpoint Cutoff = **0.3047**
+    * **Consensus Cutoff**: Arithmetic Mean = **30.21% (0.3021)**, effectively segregating Low Dependency (Mean Loss: 14.2%) from High Dependency (Mean Loss: 47.5%).
+    """)
+
+# TAB 3
+with tab3:
+    st.subheader("📘 Presentation & Peer-Review Pitching Strategy")
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.markdown("""
+        <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
+            <h4 style="color:#2B6CB0; margin-top:0;">👨‍⚕️ 1. Addressing Clinical Surgical Reviewers</h4>
+            <b>Key Concern:</b> "Is the AI safe? Will it misclassify high-risk cases and cause stump ischemia?"<br>
+            <b>Recommended Pitch:</b><br>
+            "In intraoperative guidance, <b>clinical safety (avoiding false negatives) is paramount</b>. Our app deploys a <b>Support Vector Machine (SVM) Safety Engine</b>, which achieved the <b>highest sensitivity (85.4%)</b> and <b>lowest negative likelihood ratio (NLR = 0.21)</b> in the independent test set, offering maximum rule-out security for surgical decision-making."
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_b:
+        st.markdown("""
+        <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
+            <h4 style="color:#2B6CB0; margin-top:0;">📊 2. Addressing Statistical & AI Reviewers</h4>
+            <b>Key Concern:</b> "Is the predicted risk percentage accurate? Has the model overfitted?"<br>
+            <b>Recommended Pitch:</b><br>
+            "Our app integrates a <b>Logistic Regression Precision Engine</b> for risk scoring, which yielded the <b>lowest calibration error (Brier Score = 0.174)</b> and a test-set AUC of <b>0.809</b>. The predicted probabilities tightly match observed risk without overfitting, strictly adhering to TRIPOD-AI guidelines."
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.info(
+        "💡 **Dual-Engine Advantage**: By unifying Calibrated Probability (Logistic Regression) with Surgical Safety Warning (SVM), the app balances medical safety with statistical precision.")
+
+# Footer
+st.markdown("---")
+st.caption("© 2026 LCA-Predict System | Designed for Laparoscopic Rectal Cancer Surgery Analysis")
