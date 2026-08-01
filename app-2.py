@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Clean Custom CSS
+# 2. Modern, Clean Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -25,35 +25,90 @@ st.markdown("""
         border-bottom: 3px solid #2B6CB0;
         margin-bottom: 15px;
     }
-    .metric-card-container {
+    .engine-card {
         background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
+        border: 2px solid #E2E8F0;
+        border-radius: 10px;
         padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        position: relative;
+    }
+    .engine-card-selected {
+        background-color: #F7FAFC;
+        border: 2.5px solid #2B6CB0;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 4px 10px rgba(43,108,176,0.15);
+        position: relative;
+    }
+    .selection-badge-active {
+        background-color: #2B6CB0;
+        color: #FFFFFF;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 12px;
+        display: inline-block;
+        margin-bottom: 8px;
+        letter-spacing: 0.5px;
+    }
+    .selection-badge-inactive {
+        background-color: #EDF2F7;
+        color: #A0AEC0;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 12px;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+    .status-badge-high {
+        background-color: #FED7D7;
+        color: #9B2C2C;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        display: inline-block;
+    }
+    .status-badge-low {
+        background-color: #C6F6D5;
+        color: #22543D;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        display: inline-block;
+    }
+    .arbitration-banner {
+        background-color: #EBF8FF;
+        border-left: 5px solid #3182CE;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-top: 15px;
+        margin-bottom: 15px;
     }
     .high-risk-card {
         background-color: #FFF5F5;
         border-left: 6px solid #E53E3E;
-        padding: 16px;
+        padding: 18px;
         border-radius: 6px;
-        margin-top: 15px;
+        margin-top: 10px;
         margin-bottom: 15px;
     }
     .low-risk-card {
         background-color: #F0FFF4;
         border-left: 6px solid #38A169;
-        padding: 16px;
+        padding: 18px;
         border-radius: 6px;
-        margin-top: 15px;
+        margin-top: 10px;
         margin-bottom: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-# 3. Load Pre-trained Dual-Engine Model Assets (No raw data leakage)
+# 3. Load Pre-trained Dual-Engine Assets
 @st.cache_resource
 def load_assets():
     asset_dir = 'model_assets'
@@ -75,24 +130,24 @@ except Exception as e:
     st.error(f"Failed to load model assets from 'model_assets/'. Please run export_models.py first. Error: {e}")
     st.stop()
 
-# Title Header
+# Header
 st.markdown('<div class="main-header">🩺 LCA-Predict: Decision Support System for Left Colic Artery Preservation</div>', unsafe_allow_html=True)
 st.caption("Individualized Risk Assessment for Left Colic Artery (LCA) Perfusion Dependency | Laparoscopic Rectal Cancer Surgery")
 
-# Sidebar: Patient Parameter Inputs
-st.sidebar.header("📋 Patient Parameters")
+# Sidebar
+st.sidebar.header("📋 Patient Input Parameters")
 
 with st.sidebar.expander("🧬 1. Vascular Geometry Features", expanded=True):
-    ctvalue_input = st.selectbox("LCA/IMA CT Ratio", ["≤ 0.52 (Low Risk)", "> 0.52 (High Risk)"], index=0)
+    ctvalue_input = st.selectbox("LCA/IMA CT Ratio", ["≤ 0.52 (Low Risk)", "> 0.52 (High Risk [OR=3.91])"], index=0)
     ctvalue_val = 0 if "≤" in ctvalue_input else 1
 
-    diameter_input = st.selectbox("LCA/IMA Diameter Ratio", ["≤ 0.63 (Slender)", "> 0.63 (Thick)"], index=0)
+    diameter_input = st.selectbox("LCA/IMA Diameter Ratio", ["≤ 0.63 (Slender)", "> 0.63 (Thick [OR=2.72])"], index=0)
     diameter_val = 0 if "≤" in diameter_input else 1
 
-    arterial_input = st.selectbox("LCA Branch Typology", ["Shared / Co-origin", "Type-2 Trifurcation"], index=0)
+    arterial_input = st.selectbox("LCA Branch Typology", ["Shared / Co-origin", "Type-2 Trifurcation [OR=3.91]"], index=0)
     arterial_val = 0 if "Shared" in arterial_input else 1
 
-    lca_dis_input = st.selectbox("LCA Origin Distance", ["≤ 3.5 cm (Proximal)", "> 3.5 cm (Distal)"], index=0)
+    lca_dis_input = st.selectbox("LCA Origin Distance", ["≤ 3.5 cm (Proximal [OR=1.80])", "> 3.5 cm (Distal)"], index=0)
     lca_dis_val = 0 if "≤" in lca_dis_input else 1
 
 with st.sidebar.expander("📊 2. Patient Demographics & Lab Data", expanded=False):
@@ -130,7 +185,6 @@ with st.sidebar.expander("🔬 3. Tumor & Pathology Features", expanded=False):
     m_stage_input = st.selectbox("Distant Metastasis (M)", ["M0 (No)", "M1 (Yes)"], index=0)
     m_stage_val = 0 if "M0" in m_stage_input else 1
 
-# Input Vector Assembly
 patient_data = {
     'gender': gender_val, 'age': age_val, 'BMI': bmi_val,
     'Aeterial_cl': arterial_val, 'LCA_dis': lca_dis_val, 'tumor_dia': tumor_dia_val,
@@ -142,9 +196,33 @@ patient_data = {
 df_patient = pd.DataFrame([patient_data])[preop_vars]
 patient_scaled = scaler.transform(df_patient)
 
-# Dual-Engine Inference
+# Dual-Engine Model Predictions
 prob_lr = model_lr.predict_proba(patient_scaled)[0, 1]
 prob_svm = model_svm.predict_proba(patient_scaled)[0, 1]
+
+lr_high = (prob_lr >= 0.3021)
+svm_high = (prob_svm >= 0.5000)
+
+# Decision Fusion Logic
+final_high_risk = lr_high or svm_high
+
+# Selected Engine Determination
+if lr_high and svm_high:
+    selected_engine = "BOTH"
+    driver_title = "🎯 CONSENSUS SELECTION: Both Dual-Engine Models Predict High Dependency"
+    driver_desc = "Both Logistic Regression (prob ≥ 30.21%) and SVM (prob ≥ 50.0%) independently confirm High LCA Perfusion Dependency."
+elif svm_high and not lr_high:
+    selected_engine = "SVM"
+    driver_title = "🛡️ SAFETY OVERRIDE SELECTION: Clinical Safety Engine (SVM) Selected"
+    driver_desc = "To prevent false negatives and ischemic complications, the SVM Safety Engine (Sensitivity 85.4%, NLR 0.21) overrides the LR prediction."
+elif lr_high and not svm_high:
+    selected_engine = "LR"
+    driver_title = "🎯 THRESHOLD EXCEEDED SELECTION: Precision Calibrated Engine (LR) Selected"
+    driver_desc = "The Precision Calibrated LR Model exceeded the 30.21% consensus cutoff, triggering a high-dependency warning."
+else:
+    selected_engine = "BOTH"
+    driver_title = "🟢 CONSENSUS SELECTION: Both Dual-Engine Models Confirm Low Dependency"
+    driver_desc = "Both Logistic Regression (< 30.21%) and SVM (< 50.0%) confirm that LCA preservation is not mandatory."
 
 # Streamlined 2-Tab Layout
 tab1, tab2 = st.tabs([
@@ -156,103 +234,138 @@ tab1, tab2 = st.tabs([
 # TAB 1: Assessment & Surgical Strategy
 # ==============================================================================
 with tab1:
-    st.subheader("1. Dual-Engine Risk Assessment")
+    st.subheader("1. Dual-Engine Model Outputs & Selected Decision Driver")
 
-    # Clean 2-Column Layout
     col1, col2 = st.columns(2)
 
     with col1:
+        is_lr_selected = (selected_engine == "LR" or selected_engine == "BOTH")
+        card_class_lr = "engine-card-selected" if is_lr_selected else "engine-card"
+        badge_class_lr = "selection-badge-active" if is_lr_selected else "selection-badge-inactive"
+        badge_text_lr = "✓ SELECTED FOR FINAL DECISION" if is_lr_selected else "SECONDARY ENGINE"
+
+        lr_status_badge = "status-badge-high" if lr_high else "status-badge-low"
+        lr_status_text = "🔴 HIGH RISK (≥ 30.21%)" if lr_high else "🟢 LOW RISK (< 30.21%)"
+
         st.markdown(f"""
-        <div class="metric-card-container">
-            <span style="font-size:12px; color:#718096; font-weight:bold;">Precision Calibrated Engine (Logistic Regression)</span>
-            <div style="font-size:28px; font-weight:800; color:#2B6CB0; margin:6px 0;">{prob_lr * 100:.1f}%</div>
-            <span style="font-size:11px; color:#4A5568;">Brier Error: 0.174 (Best Calibration) | AUC: 0.809</span>
+        <div class="{card_class_lr}">
+            <div><span class="{badge_class_lr}">{badge_text_lr}</span></div>
+            <span style="font-size:13px; color:#4A5568; font-weight:700;">Engine 1: Precision Calibrated Engine (Logistic Regression)</span>
+            <div style="font-size:34px; font-weight:800; color:#2B6CB0; margin:6px 0;">{prob_lr * 100:.1f}%</div>
+            <div style="margin-bottom:8px;"><span class="{lr_status_badge}">{lr_status_text}</span></div>
+            <p style="font-size:11px; color:#718096; margin-bottom:0;">
+                <b>Cutoff Threshold:</b> 30.21% | <b>Brier Error:</b> 0.174 (Best Calibration) | <b>AUC:</b> 0.809
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
     with col2:
-        svm_status_color = "#E53E3E" if prob_svm >= 0.50 else "#38A169"
-        svm_status_text = "High Dependency Warning" if prob_svm >= 0.50 else "Low Dependency (Safe)"
+        is_svm_selected = (selected_engine == "SVM" or selected_engine == "BOTH")
+        card_class_svm = "engine-card-selected" if is_svm_selected else "engine-card"
+        badge_class_svm = "selection-badge-active" if is_svm_selected else "selection-badge-inactive"
+        badge_text_svm = "✓ SELECTED FOR FINAL DECISION" if is_svm_selected else "SECONDARY ENGINE"
+
+        svm_status_badge = "status-badge-high" if svm_high else "status-badge-low"
+        svm_status_text = "🔴 HIGH RISK (≥ 50.0%)" if svm_high else "🟢 LOW RISK (< 50.0%)"
+
         st.markdown(f"""
-        <div class="metric-card-container">
-            <span style="font-size:12px; color:#718096; font-weight:bold;">Clinical Safety Engine (Support Vector Machine)</span>
-            <div style="font-size:24px; font-weight:800; color:{svm_status_color}; margin:8px 0;">{svm_status_text}</div>
-            <span style="font-size:11px; color:#4A5568;">Sensitivity: 85.4% (Min. False Negatives) | NLR: 0.21</span>
+        <div class="{card_class_svm}">
+            <div><span class="{badge_class_svm}">{badge_text_svm}</span></div>
+            <span style="font-size:13px; color:#4A5568; font-weight:700;">Engine 2: Clinical Safety Engine (Support Vector Machine)</span>
+            <div style="font-size:34px; font-weight:800; color:#2D3748; margin:6px 0;">{prob_svm * 100:.1f}%</div>
+            <div style="margin-bottom:8px;"><span class="{svm_status_badge}">{svm_status_text}</span></div>
+            <p style="font-size:11px; color:#718096; margin-bottom:0;">
+                <b>Classification Threshold:</b> 50.0% | <b>Sensitivity:</b> 85.4% (Min. Missed Cases) | <b>NLR:</b> 0.21
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
-    # Decision Banner (Fusion Logic)
-    is_high_risk = (prob_lr >= 0.3021) or (prob_svm >= 0.50)
+    # Arbitration Explanation Banner
+    st.markdown(f"""
+    <div class="arbitration-banner">
+        <div style="font-size:14px; font-weight:700; color:#1A365D;">{driver_title}</div>
+        <div style="font-size:12px; color:#2D3748; margin-top:4px;">{driver_desc}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if is_high_risk:
+    # Final Operative Recommendation Banner
+    if final_high_risk:
         st.markdown("""
         <div class="high-risk-card">
-            <h3 style="color:#C53030; margin-top:0;">🔴 HIGH LCA DEPENDENCY (slopDA ≥ 30.21%)</h3>
+            <h3 style="color:#C53030; margin-top:0;">🔴 FINAL RECOMMENDATION: PRESERVE LEFT COLIC ARTERY (Low Ligation)</h3>
             <p style="font-size:15px; font-weight:bold; color:#9B2C2C;">
-                RECOMMENDED SURGICAL STRATEGY: Preserve Left Colic Artery (Low Ligation + Station 253 LND)
+                RECOMMENDED OPERATIVE STRATEGY: Low Ligation of IMA + Station 253 Lymph Node Dissection
             </p>
             <hr style="border:0; border-top:1px solid #FEB2B2; margin:8px 0;">
-            <b>Clinical Rationale:</b>
+            <b>Clinical Rationale & Operative Steps:</b>
             <ul>
-                <li>LCA clamping is predicted to cause <b>> 30.21% drop</b> in rectal stump perfusion slope (Mean loss in high-risk cohort: <b>47.5%</b>).</li>
-                <li>Marginal artery collateral network is insufficient. Ligation at IMA root carries a substantial risk of anastomotic stump ischemia.</li>
-                <li><b>Action:</b> Dissect Station 253 lymph nodes, preserve the LCA trunk, and divide IMA distal to the LCA origin.</li>
+                <li>LCA clamping is predicted to cause <b>> 30.21% drop</b> in rectal stump perfusion slope (Mean loss in high-dependency cohort: <b>47.5%</b>).</li>
+                <li>Marginal arterial collateral network is insufficient. High ligation at the IMA root poses significant risk of anastomotic stump ischemia.</li>
+                <li><b>Operative Execution:</b> Skeletonize the IMA root, dissect Station 253 lymph nodes, and divide IMA distal to the LCA origin to preserve LCA perfusion.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown("""
         <div class="low-risk-card">
-            <h3 style="color:#276749; margin-top:0;">🟢 LOW LCA DEPENDENCY (slopDA < 30.21%)</h3>
+            <h3 style="color:#276749; margin-top:0;">🟢 FINAL RECOMMENDATION: FLEXIBLE LIGATION (High or Low Ligation)</h3>
             <p style="font-size:15px; font-weight:bold; color:#22543D;">
-                RECOMMENDED SURGICAL STRATEGY: Flexible Ligation (High or Low Ligation per LND Needs)
+                RECOMMENDED OPERATIVE STRATEGY: Ligation Mode Determined by Lymphadenectomy Needs
             </p>
             <hr style="border:0; border-top:1px solid #C6F6D5; margin:8px 0;">
-            <b>Clinical Rationale:</b>
+            <b>Clinical Rationale & Operative Steps:</b>
             <ul>
-                <li>LCA clamping causes minimal perfusion loss (Mean loss in low-risk cohort: <b>14.2%</b>).</li>
-                <li>Collateral arc supply is adequate. High ligation of IMA for radical lymphadenectomy is physiologically safe.</li>
+                <li>LCA clamping causes minimal perfusion slope drop (Mean loss in low-dependency cohort: <b>14.2%</b>).</li>
+                <li>Marginal collateral arc and SMA retrograde perfusion are physiologically robust. Ligation of LCA for radical lymphadenectomy is safe.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
-    st.subheader("2. Anatomical Risk Factor Profile")
+    # Section 2: Patient Anatomical Risk Factor Profiling
+    st.subheader("2. Patient Anatomical Risk Factor Profile")
+    st.caption("This module profiles individualized vascular geometry by mapping active risk factors against multivariable Odds Ratios (OR) from our clinical cohort.")
 
     risk_factors_present = []
     if ctvalue_val == 1:
-        risk_factors_present.append(("LCA/IMA CT Ratio > 0.52", "High CT attenuation indicates substantial blood flow in LCA."))
+        risk_factors_present.append(("LCA/IMA CT Ratio > 0.52", 3.91, "High CT attenuation reflects substantial blood flow volume in LCA."))
     if diameter_val == 1:
-        risk_factors_present.append(("LCA/IMA Diameter Ratio > 0.63", "Thick vessel diameter causes significant post-clamping drop."))
+        risk_factors_present.append(("LCA/IMA Diameter Ratio > 0.63", 2.72, "Thick vessel diameter causes significant post-clamping drop."))
     if arterial_val == 1:
-        risk_factors_present.append(("Type-2 Trifurcation Branching", "Trifurcated LCA acts as a primary supply trunk."))
+        risk_factors_present.append(("Type-2 Trifurcation Branching", 3.91, "Trifurcated LCA acts as a primary supply trunk."))
     if lca_dis_val == 0:
-        risk_factors_present.append(("Proximal Origin ≤ 3.5 cm", "Proximal branching dictates major trunk-level perfusion."))
+        risk_factors_present.append(("Proximal Origin ≤ 3.5 cm", 1.80, "Proximal branching dictates major trunk-level perfusion."))
 
-    if len(risk_factors_present) > 0:
-        st.warning(f"⚠️ {len(risk_factors_present)} Anatomical Risk Factor(s) Detected:")
-        for factor, desc in risk_factors_present:
-            st.markdown(f"* **{factor}**: _{desc}_")
-    else:
-        st.info("ℹ️ No dominant anatomical risk features detected.")
+    col_prof1, col_prof2 = st.columns([1.1, 1])
 
-    # Attribution Plot
-    fig_attr, ax_attr = plt.subplots(figsize=(7, 2.5), dpi=150)
-    features_names = ['CT Ratio > 0.52', 'Diameter Ratio > 0.63', 'Type-2 Trifurcation', 'Proximal Origin ≤ 3.5cm', 'BMI > 24 kg/m²']
-    presence = [ctvalue_val, diameter_val, arterial_val, 1 if lca_dis_val == 0 else 0, bmi_val]
-    colors_bar = ['#E53E3E' if p == 1 else '#CBD5E0' for p in presence]
+    with col_prof1:
+        if len(risk_factors_present) > 0:
+            st.warning(f"⚠️ {len(risk_factors_present)} Independent Anatomical Risk Factor(s) Active in This Patient:")
+            for factor, or_val, desc in risk_factors_present:
+                st.markdown(f"* **{factor}** (Multivariable **Adjusted OR = {or_val:.2f}**): _{desc}_")
+        else:
+            st.info("ℹ️ No dominant anatomical risk features detected. Vascular geometry reflects a typical low-dependency profile.")
 
-    ax_attr.barh(features_names, presence, color=colors_bar, height=0.5)
-    ax_attr.set_xlim(0, 1.2)
-    ax_attr.set_xticks([0, 1])
-    ax_attr.set_xticklabels(['Absent', 'Present'], fontsize=9)
-    ax_attr.set_title("Anatomical Risk Factors Matching Profile", fontsize=10, fontweight='bold')
-    sns.despine(ax=ax_attr)
-    plt.tight_layout()
-    st.pyplot(fig_attr)
+    with col_prof2:
+        fig_attr, ax_attr = plt.subplots(figsize=(6, 2.2), dpi=150)
+        features_names = ['CT Ratio > 0.52', 'Diameter Ratio > 0.63', 'Type-2 Trifurcation', 'Proximal Origin ≤ 3.5cm', 'BMI > 24 kg/m²']
+        presence = [ctvalue_val, diameter_val, arterial_val, 1 if lca_dis_val == 0 else 0, bmi_val]
+        colors_bar = ['#E53E3E' if p == 1 else '#CBD5E0' for p in presence]
 
-# ==============================================================================
-# TAB 2: Reviewer & Presentation Guide
-# ==============================================================================
+        bars = ax_attr.barh(features_names, presence, color=colors_bar, height=0.5)
+        ax_attr.set_xlim(0, 1.3)
+        ax_attr.set_xticks([0, 1])
+        ax_attr.set_xticklabels(['Absent (0)', 'Present (1)'], fontsize=8)
+        ax_attr.set_title("Anatomical Risk Factors Active Matching Profile", fontsize=9, fontweight='bold')
+
+        for bar, p in zip(bars, presence):
+            if p == 1:
+                ax_attr.text(1.03, bar.get_y() + bar.get_height()/2, 'Active', va='center', fontsize=8, fontweight='bold', color='#C53030')
+
+        sns.despine(ax=ax_attr)
+        plt.tight_layout()
+        st.pyplot(fig_attr)
+
+# TAB 2
 with tab2:
     st.subheader("📘 Presentation & Peer-Review Pitching Guide")
 
@@ -261,7 +374,7 @@ with tab2:
     with col_a:
         st.markdown("""
         <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
-            <h4 style="color:#2B6CB0; margin-top:0;">👨‍⚕️ 1. Addressing Clinical Surgical Reviewers</h4>
+            <h4 style="color:#2B6CB0; margin-top:0;">👨‍⚕️ 1. For Clinical Surgical Reviewers</h4>
             <b>Key Concern:</b> "Is the AI safe? Will it misclassify high-risk cases?"<br><br>
             <b>Recommended Pitch:</b><br>
             "In intraoperative decision support, <b>minimizing false negatives is paramount</b>. Our app deploys a <b>Support Vector Machine (SVM) Safety Engine</b>, achieving the <b>highest sensitivity (85.4%)</b> and <b>lowest negative likelihood ratio (NLR = 0.21)</b> to offer maximum protection against stump ischemia."
@@ -271,7 +384,7 @@ with tab2:
     with col_b:
         st.markdown("""
         <div style="background:#EDF2F7; padding:15px; border-radius:6px;">
-            <h4 style="color:#2B6CB0; margin-top:0;">📊 2. Addressing Statistical & AI Reviewers</h4>
+            <h4 style="color:#2B6CB0; margin-top:0;">📊 2. For Statistical & AI Reviewers</h4>
             <b>Key Concern:</b> "Is the risk percentage calibrated? Has it overfitted?"<br><br>
             <b>Recommended Pitch:</b><br>
             "Our app integrates a <b>Logistic Regression Precision Engine</b> for risk scoring, yielding the <b>lowest calibration error (Brier Score = 0.174)</b> and a test-set AUC of <b>0.809</b>, adhering strictly to TRIPOD-AI guidelines."
